@@ -27,7 +27,6 @@ pub mod staking {
         // 200 / 86400 = 0.002314815
         let shcp_lamport_amount_seconds = 002314815;  // 200 shCP/j = 200 ||| (24 * 3600 seconds) * 1e9  (9 digit after coma)
 
-        
         // The Staking account should have been created directly
         // thanks to the macro `init`
         ctx.accounts.stacking_account.player_key = *ctx.accounts.player.key;
@@ -61,6 +60,19 @@ pub mod staking {
     }
 
     pub fn claim_shcp_reward(ctx: Context<ClaimSchpReward>) -> Result<()> {
+
+        // verify that the player (P) can claim the reward
+        // We need to verify in the stacking account (SA) several point
+        // P_pub == SA_P_pub
+        if ctx.accounts.stacking_account.player_key != *ctx.accounts.player.key {
+            return err!(ErrorCode::PlayerIsNotOwner);    
+        }
+
+        // P_mint_key == SA_mint_key  (Same pubkey for the NFT)
+        if ctx.accounts.stacking_account.nft_mint_key != *ctx.accounts.nft_mint.to_account_info().key {
+            return err!(ErrorCode::WrongNftKey);    
+        }
+
         // Compute how many $shCP the player should receive
         let current_clock = Clock::get().unwrap().unix_timestamp;
         let clock_last_clain = ctx.accounts.stacking_account.claimed_at;
@@ -87,6 +99,9 @@ pub mod staking {
             ),
             shcp_lamport_amount_seconds as u64,
         );
+
+        // Update the claimed_at field
+        ctx.accounts.stacking_account.claimed_at = current_clock;
 
         Ok(())
     }

@@ -229,9 +229,13 @@ describe("staking", () => {
       signers: []
     });
 
-    let expected_amount = 10000e9 - 1;
+    let schp_amount_per_seconds = 2314815;
+    let schp_vault_init_amount = 10000e9;
+    let max_expected_amount = schp_vault_init_amount - schp_amount_per_seconds
+
     let vault_token_amount = await connection.getTokenAccountBalance(schp_vault_ata_key);
     console.log(`vault_token_amount: ${vault_token_amount.value.amount}`);
+    assert.isAtMost(vault_token_amount.value.uiAmount, max_expected_amount);
     // assert.l(
     //   vault_token_amount.value.amount.toString(),
     //   expected_amount.toString(),
