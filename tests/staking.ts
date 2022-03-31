@@ -1,10 +1,12 @@
 import * as anchor from "@project-serum/anchor";
 import { Program } from "@project-serum/anchor";
 import { Staking } from "../target/types/staking";
-import { Keypair, SystemProgram, PublicKey } from "@solana/web3.js";
+import { Keypair, SystemProgram, PublicKey, SYSVAR_RENT_PUBKEY} from "@solana/web3.js";
 import {
+  TOKEN_PROGRAM_ID,
   createMint,
   createAssociatedTokenAccount,
+  getMinimumBalanceForRentExemptAccount,
   mintToChecked
 } from "@solana/spl-token";
 
@@ -130,4 +132,55 @@ describe("staking", () => {
       9
     );
   })
+
+  it("Staking a Compute Shapz", async () => {
+    // The NFT vault WILL BE INITIATED by the program
+    // But we need to create the public key using the same seed
+    // as the program
+    // The same goes for the stacking account
+
+    // Create the pubkey for the NFT vault from a seed
+    const [_vault_nft_ata, _bump] = await PublicKey.findProgramAddress(
+      [
+        Buffer.from(anchor.utils.bytes.utf8.encode("nft_vault_ata")),
+        player.publicKey.toBuffer(),
+        nft_mint_account_key.toBuffer(),
+      ],
+      program.programId
+    );
+    console.log(`vault_nft_ata: ${_vault_nft_ata.toBase58()}`);
+
+    // Create the pubkey for the player Stacking account
+    const [_player_stacking_account, _psa_bump] = await PublicKey.findProgramAddress(
+      [
+        Buffer.from(anchor.utils.bytes.utf8.encode("shcp_stacking")),
+        player.publicKey.toBuffer(),
+        nft_mint_account_key.toBuffer(),
+      ],
+      program.programId
+    );
+    console.log(`player_stacking_account: ${_player_stacking_account.toBase58()}`);
+
+    console.log(`player address: ${player.publicKey.toBase58()}`);
+    
+    const tx = await program.rpc.stakeShcp(
+      {
+        accounts: {
+          player: player.publicKey,
+          playerNftAtaAccount: nft_player_ata_key,
+          shapzNftAccount: _vault_nft_ata,
+          nftMint: nft_mint_account_key,
+          playerShcpClaimAccount: shcp_player_ata_key,
+          shapzShcpVault: schp_vault_ata_key,
+          stackingAccount: _player_stacking_account,
+          rent: SYSVAR_RENT_PUBKEY,
+          systemProgram: SystemProgram.programId,
+          tokenProgram: TOKEN_PROGRAM_ID,
+        },
+        signers: [player]
+      },
+    )
+
+  });
+
 });
