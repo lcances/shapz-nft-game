@@ -5,10 +5,13 @@ import { Keypair, SystemProgram, PublicKey, SYSVAR_RENT_PUBKEY} from "@solana/we
 import {
   TOKEN_PROGRAM_ID,
   createMint,
+  setAuthority,
+  AuthorityType,
   createAssociatedTokenAccount,
   getMinimumBalanceForRentExemptAccount,
   mintToChecked
 } from "@solana/spl-token";
+import { assert } from "chai";
 
 describe("staking", () => {
   // Configure the client to use the local cluster.
@@ -27,7 +30,7 @@ describe("staking", () => {
   let shcp_mint_account_key: PublicKey;
   let nft_mint_account_key: PublicKey;
   let shcp_player_ata_key: PublicKey;
-  let nft_player_ata_key: PublicKey;
+  let nft_ata_key: PublicKey;
   let schp_vault_ata_key: PublicKey;
   // the "nft_vault_ata" will be automatically created by the program
 
@@ -79,7 +82,7 @@ describe("staking", () => {
     );
     
     console.log("Create the player NFT associated token account")
-    nft_player_ata_key = await createAssociatedTokenAccount(
+    nft_ata_key = await createAssociatedTokenAccount(
       connection,  // connection
       player,  // fee payer
       nft_mint_account_key,  // MintAccount
@@ -93,26 +96,34 @@ describe("staking", () => {
       connection,  // connection
       shapz_master,  // fee payer
       nft_mint_account_key,  // MintAccount
-      nft_player_ata_key,  // AssociatedTokenAccount
+      nft_ata_key,  // AssociatedTokenAccount
       shapz_master.publicKey,  // MintAuthority
       1,  // amount
       0
     );
     console.log(`txhash: ${txhash}`);
 
-    console.log("Give the player some shCP tokens")
-    txhash = await mintToChecked(
-      connection,  // connection
-      shapz_master,  // fee payer
-      shcp_mint_account_key,  // MintAccount
-      shcp_player_ata_key,  // AssociatedTokenAccount
-      shapz_master.publicKey,
-      10e9,  // amount
-      9
-    );
+    // console.log("Give the player some shCP tokens")
+    // txhash = await mintToChecked(
+    //   connection,  // connection
+    //   shapz_master,  // fee payer
+    //   shcp_mint_account_key,  // MintAccount
+    //   shcp_player_ata_key,  // AssociatedTokenAccount
+    //   shapz_master.publicKey,
+    //   10e9,  // amount
+    //   9
+    // );
   });
 
   it("Initialize the game vault", async () => {
+    console.log('Calculate pda for autority over the vault')
+    const [_shcp_vault_authority, _shcp_vault_authority_bump] = await PublicKey.findProgramAddress(
+      [
+        Buffer.from(anchor.utils.bytes.utf8.encode("shcp_authority")),
+      ],
+      program.programId
+    );
+
     console.log("Initialize the game vault")
     schp_vault_ata_key = await createAssociatedTokenAccount(
       connection,  // connection
@@ -131,6 +142,16 @@ describe("staking", () => {
       10000e9,  // amount
       9
     );
+
+    console.log("Give the authority over the vault to the program")
+    const tx = await program.rpc.globalInit({
+      accounts: {
+        shapzMaster: shapz_master.publicKey,
+        shcpVaultAta: schp_vault_ata_key,
+        tokenProgram: TOKEN_PROGRAM_ID,
+      },
+      signers: [shapz_master],
+    });
   })
 
   it("Staking a Compute Shapz", async () => {
@@ -139,18 +160,8 @@ describe("staking", () => {
     // as the program
     // The same goes for the stacking account
 
-    // Create the pubkey for the NFT vault from a seed
-    const [_vault_nft_ata, _bump] = await PublicKey.findProgramAddress(
-      [
-        Buffer.from(anchor.utils.bytes.utf8.encode("nft_vault_ata")),
-        player.publicKey.toBuffer(),
-        nft_mint_account_key.toBuffer(),
-      ],
-      program.programId
-    );
-    console.log(`vault_nft_ata: ${_vault_nft_ata.toBase58()}`);
-
     // Create the pubkey for the player Stacking account
+    console.log("Calculate PDA for the player staking account")
     const [_player_stacking_account, _psa_bump] = await PublicKey.findProgramAddress(
       [
         Buffer.from(anchor.utils.bytes.utf8.encode("shcp_stacking")),
@@ -160,15 +171,13 @@ describe("staking", () => {
       program.programId
     );
     console.log(`player_stacking_account: ${_player_stacking_account.toBase58()}`);
-
     console.log(`player address: ${player.publicKey.toBase58()}`);
     
     const tx = await program.rpc.stakeShcp(
       {
         accounts: {
           player: player.publicKey,
-          playerNftAtaAccount: nft_player_ata_key,
-          shapzNftAccount: _vault_nft_ata,
+          nftAtaAccount: nft_ata_key,
           nftMint: nft_mint_account_key,
           playerShcpClaimAccount: shcp_player_ata_key,
           shapzShcpVault: schp_vault_ata_key,
@@ -180,6 +189,53 @@ describe("staking", () => {
         signers: [player]
       },
     )
+  });
+
+  it("Claiming the reward", async () => {
+    console.log('Calculate pda for authority over the vault')
+    const [_shcp_vault_authority, _shcp_vault_authority_bump] = await PublicKey.findProgramAddress(
+      [
+        Buffer.from(anchor.utils.bytes.utf8.encode("shcp_authority")),
+      ],
+      program.programId
+    );
+
+    console.log("Calculate PDA for the player staking account")
+    const [_player_stacking_account, _psa_bump] = await PublicKey.findProgramAddress(
+      [
+        Buffer.from(anchor.utils.bytes.utf8.encode("shcp_stacking")),
+        player.publicKey.toBuffer(),
+        nft_mint_account_key.toBuffer(),
+      ],
+      program.programId
+    );
+
+    // Wait for one seconds
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
+    // There is no need for signer since the transfer is done from
+    // the shapz shcp vault account, and the program already have
+    // authority over it
+    const tx = await program.rpc.claimShcpReward({
+      accounts: {
+        player: player.publicKey,
+        playerShcpAta: shcp_player_ata_key,
+        shcpVaultAta: schp_vault_ata_key,
+        authority: _shcp_vault_authority,
+        nftMint: nft_mint_account_key,
+        stackingAccount: _player_stacking_account,
+        tokenProgram: TOKEN_PROGRAM_ID,
+      },
+      signers: []
+    });
+
+    let expected_amount = 10000e9 - 1;
+    let vault_token_amount = await connection.getTokenAccountBalance(schp_vault_ata_key);
+    console.log(`vault_token_amount: ${vault_token_amount.value.amount}`);
+    // assert.l(
+    //   vault_token_amount.value.amount.toString(),
+    //   expected_amount.toString(),
+    // );
 
   });
 
