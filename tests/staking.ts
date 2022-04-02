@@ -156,42 +156,43 @@ describe("staking", () => {
     });
   })
 
-  // it("Staking a Compute Shapz", async () => {
-  //   // The NFT vault WILL BE INITIATED by the program
-  //   // But we need to create the public key using the same seed
-  //   // as the program
-  //   // The same goes for the stacking account
+  it("Staking a Compute Shapz", async () => {
+    // The NFT vault WILL BE INITIATED by the program
+    // But we need to create the public key using the same seed
+    // as the program
+    // The same goes for the stacking account
 
-  //   // Create the pubkey for the player Stacking account
-  //   console.log("Calculate PDA for the player staking account")
-  //   const [_player_stacking_account, _psa_bump] = await PublicKey.findProgramAddress(
-  //     [
-  //       Buffer.from(anchor.utils.bytes.utf8.encode("shcp_stacking")),
-  //       player.publicKey.toBuffer(),
-  //       nft_mint_account_key.toBuffer(),
-  //     ],
-  //     program.programId
-  //   );
-  //   console.log(`player_stacking_account: ${_player_stacking_account.toBase58()}`);
-  //   console.log(`player address: ${player.publicKey.toBase58()}`);
+    // Create the pubkey for the player Stacking account
+    console.log("Calculate PDA for the player staking account")
+    const [_player_stacking_account, _psa_bump] = await PublicKey.findProgramAddress(
+      [
+        Buffer.from(anchor.utils.bytes.utf8.encode("shcp_stacking")),
+        player.publicKey.toBuffer(),
+        nft_mint_account_key.toBuffer(),
+      ],
+      program.programId
+    );
+    console.log(`player_stacking_account: ${_player_stacking_account.toBase58()}`);
+    console.log(`player address: ${player.publicKey.toBase58()}`);
     
-  //   const tx = await program.rpc.stakeShcp(
-  //     {
-  //       accounts: {
-  //         player: player.publicKey,
-  //         nftAtaAccount: nft_ata_key,
-  //         nftMint: nft_mint_account_key,
-  //         playerShcpClaimAccount: shcp_player_ata_key,
-  //         shapzShcpVault: schp_vault_ata_key,
-  //         stackingAccount: _player_stacking_account,
-  //         rent: SYSVAR_RENT_PUBKEY,
-  //         systemProgram: SystemProgram.programId,
-  //         tokenProgram: TOKEN_PROGRAM_ID,
-  //       },
-  //       signers: [player]
-  //     },
-  //   )
-  // });
+    const tx = await program.rpc.stakeShcp(
+      {
+        accounts: {
+          player: player.publicKey,
+          nftAtaAccount: nft_ata_key,
+          nftMint: nft_mint_account_key,
+          playerShcpClaimAccount: shcp_player_ata_key,
+          shapzShcpVault: schp_vault_ata_key,
+          authority: POOL_AUTHORITY,
+          stackingAccount: _player_stacking_account,
+          rent: SYSVAR_RENT_PUBKEY,
+          systemProgram: SystemProgram.programId,
+          tokenProgram: TOKEN_PROGRAM_ID,
+        },
+        signers: [player]
+      },
+    )
+  });
 
   // it("Claiming the reward", async () => {
   //   console.log('Calculate pda for authority over the vault')

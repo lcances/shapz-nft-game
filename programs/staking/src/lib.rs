@@ -8,7 +8,7 @@ use spl_token::instruction::AuthorityType;
 
 declare_id!("Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS");
 
-// const PREFIX_SHCP_STAKING: &[u8] = b"shcp_staking";
+const PREFIX_SHCP_STAKING: &[u8] = b"shcp_staking";
 const PREFIX_AUTHORITY: &[u8] = b"authority";
 
 #[program]
@@ -41,7 +41,13 @@ pub mod staking {
 
         // Now that we have filled every field of the StakingAccount, we need
         // the program to have authority to manipulate the NFT.
-        let (_authority, _authority_bump) = Pubkey::find_program_address(&[SCHP_STACKINGACCOUNT_SEED], ctx.program_id);
+        // We then create PDA build using the unique public key of the 
+        // authority, the player, and the NFT
+        let (_nft_stake_pda, _nft_stake_pda_bump) = Pubkey::find_program_address(&[PREFIX_SHCP_STAKING,
+            ctx.accounts.authority.key.as_ref(),
+            ctx.accounts.player.key.as_ref(),
+            ctx.accounts.nft_mint.to_account_info().key.as_ref(),
+            ], ctx.program_id);
 
         set_authority(
             CpiContext::new(
@@ -55,7 +61,7 @@ pub mod staking {
             
             AuthorityType::AccountOwner,
 
-            Some(_authority)
+            Some(_nft_stake_pda)
         )?;
 
         Ok(())
@@ -167,30 +173,43 @@ pub struct StakeShcp<'info> {
     #[account(mut)]
     pub nft_ata_account: Account<'info, TokenAccount>,
     pub nft_mint: Account<'info, Mint>,
-    //
+
     // The player's $shCP claim account, it should already exist since the player
-    // already own $shCP. That where the account will be claim in
-    // Then the vault $shCP that also already exist. It where all the token are
-    // stored.
+    // already own $shCP. That where the $sdhCP will be claim in
     #[account(mut)]
     pub player_shcp_claim_account: Account<'info, TokenAccount>,
+
+    // Then the vault $shCP that also already exist. It is where all the token are
+    // stored.
     #[account(mut)]
     pub shapz_shcp_vault: Account<'info, TokenAccount>,
-    //
+
+    // Staking mean that we are going to give to the program
+    // authority over the NFT, we need then the authority key
+    /// CHECK:
+    pub authority: AccountInfo<'info>,
+    
     // The stacking account need to be created and will store all the information
-    // to link the player with the staked NFT
+    // needed to link the player with the staked NFT.
+    // The address is calculated using a PDA created from a
+    //    - a prefix
+    //    - the player's pubkey
+    //    - the nft mint pubkey
     #[account(
         init,
         payer = player,
         space = 8 + StakingAccount::LEN,
         seeds = [
-            b"shcp_stacking",
+            b"shcp_stacking",  // PREFIX_SHCP_STACKING
             player.key().as_ref(),
             nft_mint.key().as_ref(),
         ],
         bump
     )]
     pub stacking_account: Box<Account<'info, StakingAccount>>,
+
+    // Since we are creating a data account, we need to provide
+    // some SOL to pay the rent
     pub rent: Sysvar<'info, Rent>,
     pub system_program: Program<'info, System>,
     pub token_program: Program<'info, Token>,
