@@ -1,6 +1,5 @@
 use anchor_lang::prelude::*;
 use anchor_spl::{
-    associated_token::AssociatedToken,
     token::{Token, Mint, TokenAccount, SetAuthority, set_authority,
         transfer, Transfer
         },
@@ -8,6 +7,9 @@ use anchor_spl::{
 use spl_token::instruction::AuthorityType;
 
 declare_id!("Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS");
+
+// const PREFIX_SHCP_STAKING: &[u8] = b"shcp_staking";
+const PREFIX_AUTHORITY: &[u8] = b"authority";
 
 #[program]
 pub mod staking {
@@ -59,6 +61,7 @@ pub mod staking {
         Ok(())
     }
 
+
     pub fn claim_shcp_reward(ctx: Context<ClaimSchpReward>) -> Result<()> {
 
         // verify that the player (P) can claim the reward
@@ -78,7 +81,7 @@ pub mod staking {
         let clock_last_clain = ctx.accounts.stacking_account.claimed_at;
 
         let elapsed_seconds = current_clock - clock_last_clain;
-        let shcp_lamport_amount_seconds = ctx.accounts.stacking_account.shcp_amount_seconds;
+        let shcp_lamport_amount_seconds = elapsed_seconds * ctx.accounts.stacking_account.shcp_amount_seconds;
 
         // Transfer
         let (_vault_authority, vault_authority_bump) = Pubkey::find_program_address(&[SCHP_AUTHORITY_SEED], ctx.program_id);
@@ -107,22 +110,32 @@ pub mod staking {
     }
 
     pub fn global_init(ctx: Context<GlobalInit>) -> Result<()> {
-        let (_authority, _authority_bump) = Pubkey::find_program_address(&[SCHP_AUTHORITY_SEED], ctx.program_id);
-        // let authority_seeds = &[SCHP_AUTHORITY_SEED[..], &[vault_authority_bump]];
+        // This instruction is called only once, at the beginning of the program
+        // It's purpose is to give authority over the $shCP ATA (the vault) to the program
+        // To do so, the "vault_pda" is computed using a seed and the authority public key
+        let (_vault_pda, _vault_pda_bump) = Pubkey::find_program_address(&[PREFIX_AUTHORITY,
+                ctx.accounts.authority.key.as_ref(),
+            ], ctx.program_id);
 
-        set_authority(
-            CpiContext::new(
-                ctx.accounts.token_program.to_account_info(),
+        let _seed = &[PREFIX_AUTHORITY,
+            ctx.accounts.authority.key.as_ref(),
+            &[_vault_pda_bump]];
+        
+        // Then we need to declare a Cross Program Invocation (CPI)
+        let cpi_ctx = CpiContext::new(
+            ctx.accounts.token_program.to_account_info(),
 
-                SetAuthority {
-                    current_authority: ctx.accounts.shapz_master.to_account_info().clone(),
-                    account_or_mint: ctx.accounts.shcp_vault_ata.to_account_info().clone(),
-                }
-            ),
-            
+            anchor_spl::token::SetAuthority {
+                current_authority: ctx.accounts.shapz_master.to_account_info().clone(),
+                account_or_mint: ctx.accounts.shcp_vault_ata.to_account_info().clone(),
+            }
+        );
+
+        // We can now transfer the authority to the program
+        anchor_spl::token::set_authority(
+            cpi_ctx,
             AuthorityType::AccountOwner,
-
-            Some(_authority)
+            Some(_vault_pda),
         )?;
 
         Ok(())
@@ -136,6 +149,8 @@ pub struct GlobalInit<'info> {
     pub shapz_master: Signer<'info>,
     #[account(mut)]
     pub shcp_vault_ata: Account<'info, TokenAccount>,
+    ///CHECK:
+    pub authority: AccountInfo<'info>,
     pub token_program: Program<'info, Token>,
 }
 
