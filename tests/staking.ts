@@ -114,17 +114,6 @@ describe("staking", () => {
     );
     console.log(`txhash: ${txhash}`);
 
-    // console.log("Give the player some shCP tokens")
-    // txhash = await mintToChecked(
-    //   connection,  // connection
-    //   shapz_master,  // fee payer
-    //   shcp_mint_account_key,  // MintAccount
-    //   shcp_player_ata_key,  // AssociatedTokenAccount
-    //   shapz_master.publicKey,
-    //   10e9,  // amount
-    //   9
-    // );
-
     console.log('----------------------------------------')
   });
 
@@ -275,29 +264,31 @@ describe("staking", () => {
     console.log('----------------------------------------')
   });
 
-  // it("Unstaking", async () => {
-  //   console.log("Calculate PDA for the player staking account")
-  //   const [_player_stacking_account, _psa_bump] = await PublicKey.findProgramAddress(
-  //     [
-  //       Buffer.from(anchor.utils.bytes.utf8.encode("shcp_stacking")),
-  //       player.publicKey.toBuffer(),
-  //       nft_mint_account_key.toBuffer(),
-  //     ],
-  //     program.programId
-  //   );
+  it("Unstaking", async () => {
+    console.log("Calculate PDA for the player staking account")
+    const [_player_stacking_account, _psa_bump] = await PublicKey.findProgramAddress(
+      [
+        Buffer.from(anchor.utils.bytes.utf8.encode(PREFIX_STAKING_SHCP)),
+        AUTHORITY.toBuffer(),
+        player.publicKey.toBuffer(),
+        nft_mint_account_key.toBuffer(),
+      ],
+      program.programId
+    );
 
-  //   const tx = await program.rpc.cancelStakeShcp({
-  //     accounts : {
-  //       player: player.publicKey,
-  //       nftAtaAccount: nft_ata_key,
-  //       authority: _player_stacking_account,
-  //       systemProgram: SystemProgram.programId,
-  //       tokenProgram: TOKEN_PROGRAM_ID,
-  //     },
-  //     signers: []
-  //   });
+    const tx = await program.rpc.unstakeShcp({
+      accounts : {
+        player: player.publicKey,
+        nftAtaAccount: nft_ata_key,
+        nftMint: nft_mint_account_key,
+        authority: AUTHORITY,
+        stackingAccount: _player_stacking_account,
+        tokenProgram: TOKEN_PROGRAM_ID,
+      },
+      signers: []
+    });
 
-  //   console.log('----------------------------------------')
+    console.log('----------------------------------------')
   
-  // });
+  });
 });

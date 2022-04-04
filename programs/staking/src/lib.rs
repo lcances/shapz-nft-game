@@ -67,6 +67,53 @@ pub mod staking {
         Ok(())
     }
 
+    pub fn unstake_shcp(ctx: Context<UnstakeShcp>) -> Result<()> {
+        // verify that the player (P) can claim the reward
+        // We need to verify in the stacking account (SA) several point
+        // P_pub == SA_P_pub
+        if ctx.accounts.stacking_account.player_key != *ctx.accounts.player.key {
+            return err!(ErrorCode::PlayerIsNotOwner);    
+        }
+
+        // P_mint_key == SA_mint_key  (Same mint pubkey for the NFT)
+        if ctx.accounts.stacking_account.nft_mint_key != *ctx.accounts.nft_mint.to_account_info().key {
+            return err!(ErrorCode::WrongNftKey);    
+        }
+
+        // The PDA generated MUST be the same as the StakingAccount, since 
+        // it has (the staking account) the new authority of the NFT
+        let (_stake_pda, _stake_pda_bump) = Pubkey::find_program_address(&[PREFIX_STAKING_SHCP,
+            ctx.accounts.authority.key.as_ref(),
+            ctx.accounts.player.key.as_ref(),
+            ctx.accounts.nft_mint.to_account_info().key.as_ref(),
+            ], ctx.program_id);
+
+        let _stacking_account_seed = &[PREFIX_STAKING_SHCP,
+            ctx.accounts.authority.key.as_ref(),
+            ctx.accounts.player.key.as_ref(),
+            ctx.accounts.nft_mint.to_account_info().key.as_ref(),
+            &[_stake_pda_bump]];
+
+        set_authority(
+            CpiContext::new_with_signer(
+                ctx.accounts.token_program.to_account_info(),
+
+                SetAuthority {
+                    current_authority: ctx.accounts.stacking_account.to_account_info().clone(),
+                    account_or_mint: ctx.accounts.nft_ata_account.to_account_info().clone(),
+                },
+
+                &[&_stacking_account_seed[..]],
+            ),
+            
+            AuthorityType::AccountOwner,
+
+            Some(ctx.accounts.player.key())
+        )?;
+
+        Ok(())
+    }
+
 
     pub fn claim_shcp_reward(ctx: Context<ClaimSchpReward>) -> Result<()> {
 
@@ -220,6 +267,7 @@ pub struct StakeShcp<'info> {
     // needed to link the player with the staked NFT.
     // The address is calculated using a PDA created from a
     //    - a prefix
+    //    - The authority pubkey
     //    - the player's pubkey
     //    - the nft mint pubkey
     #[account(
@@ -279,6 +327,45 @@ pub struct ClaimSchpReward<'info> {
         bump
     )]
     pub config_account: Account<'info, ConfigAccount>,
+    pub token_program: Program<'info, Token>,
+}
+
+#[derive(Accounts)]
+pub struct UnstakeShcp<'info> {
+    /// The player, but do not need to sign the transaction
+    /// CHECK:
+    #[account(mut)]
+    pub player: AccountInfo<'info>,
+
+    // The player's nft ata, it should already exist since the player own the NFT.
+    // Then the mint pubkey of the NFT 
+    #[account(mut)]
+    pub nft_ata_account: Account<'info, TokenAccount>,
+    pub nft_mint: Account<'info, Mint>,
+
+    // UN-Staking mean that we are going to give to the PLAYER
+    // authority over the NFT, we need then the authority key
+    /// CHECK:
+    pub authority: AccountInfo<'info>,
+
+    // The stacking account linked to the player. it is necessary
+    // to run some verification and need to be closed.
+    // The address is calculated using a PDA created from a
+    //    - a prefix
+    //    - The authority pubkey
+    //    - the player's pubkey
+    //    - the nft mint pubkey
+    #[account(
+        seeds = [
+            PREFIX_STAKING_SHCP,
+            authority.key().as_ref(),
+            player.key().as_ref(),
+            nft_mint.key().as_ref(),
+        ],
+        bump
+    )]
+    pub stacking_account: Box<Account<'info, StakingAccount>>,
+
     pub token_program: Program<'info, Token>,
 }
 
