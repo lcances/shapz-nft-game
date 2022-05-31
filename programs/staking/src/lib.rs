@@ -6,8 +6,7 @@ use anchor_spl::{
 };
 use spl_token::instruction::AuthorityType;
 
-declare_id!("Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS");
-
+declare_id!("GDmUNdVnZp4q77xz7ovjeoaCn57p9esWWF85UUCPz6Kk");
 
 const PREFIX_STAKING_SHCP: &[u8] = b"shcp_staking";
 const PREFIX_CONFIG: &[u8] = b"shapz_config";
@@ -16,6 +15,48 @@ const PREFIX_CONFIG: &[u8] = b"shapz_config";
 #[program]
 pub mod staking {
     use super::*;
+
+    /*
+    Faucet
+    Only used for the demo website, it allows the potentials users 
+    to get funds for testing the website. They can get
+    either shcp or shfec.
+    */
+    pub fn faucet(ctx: Context<Faucet>, amount: u64) -> Result<()> {
+        // The account that will have authority over the vault is the config account
+        // It's pubkey can be found using the seed bellow
+        let (_config_pda, _bump) = Pubkey::find_program_address(&[
+                PREFIX_CONFIG,
+                ctx.accounts.authority.key.as_ref(),
+                ctx.accounts.vault_ata.to_account_info().key.as_ref(),
+            ], ctx.program_id);
+
+        let _config_seed = &[
+            PREFIX_CONFIG,
+            ctx.accounts.authority.key.as_ref(),
+            ctx.accounts.vault_ata.to_account_info().key.as_ref(),
+            &[_bump]
+        ];
+
+                
+        transfer(
+            CpiContext::new_with_signer(
+                ctx.accounts.token_program.to_account_info(),
+
+                Transfer {
+                    from: ctx.accounts.vault_ata.to_account_info().clone(),
+                    to: ctx.accounts.player_shcp_ata.to_account_info().clone(),
+                    authority: ctx.accounts.config_account.to_account_info().clone(),
+                },
+
+                &[&_config_seed[..]],
+            ),
+
+            amount as u64,
+        );
+
+        Ok(())
+    }
 
     pub fn stake_shcp(ctx: Context<StakeShcp>) -> Result<()> {
         let clock = Clock::get().unwrap().unix_timestamp;
@@ -114,7 +155,6 @@ pub mod staking {
         Ok(())
     }
 
-
     pub fn claim_shcp_reward(ctx: Context<ClaimSchpReward>) -> Result<()> {
 
         // verify that the player (P) can claim the reward
@@ -129,6 +169,8 @@ pub mod staking {
             return err!(ErrorCode::WrongNftKey);    
         }
 
+        // TODO: Add verification for NFT belong to the project
+
         // Compute how many $shCP the player should receive
         let current_clock = Clock::get().unwrap().unix_timestamp;
         let clock_last_clain = ctx.accounts.stacking_account.claimed_at;
@@ -137,17 +179,22 @@ pub mod staking {
         let shcp_lamport_amount_seconds = elapsed_seconds * ctx.accounts.stacking_account.shcp_amount_seconds;
 
         // Transfer the token
-        // The config account hold authority to transfer the token
         // The account that will have authority over the vault is the config account
         // It's pubkey can be found using the seed bellow
-        let (_config_pda, _bump) = Pubkey::find_program_address(&[PREFIX_CONFIG,
-                ctx.accounts.authority.key.as_ref(),
-            ], ctx.program_id);
-
-        let _config_seed = &[PREFIX_CONFIG,
+        let (_config_pda, _bump) = Pubkey::find_program_address(&[
+            PREFIX_CONFIG,
             ctx.accounts.authority.key.as_ref(),
-            &[_bump]];
+            ctx.accounts.shcp_vault_ata.to_account_info().key.as_ref(),
+        ], ctx.program_id);
 
+        let _config_seed = &[
+            PREFIX_CONFIG,
+            ctx.accounts.authority.key.as_ref(),
+            ctx.accounts.shcp_vault_ata.to_account_info().key.as_ref(),
+            &[_bump]
+        ];
+
+                
         transfer(
             CpiContext::new_with_signer(
                 ctx.accounts.token_program.to_account_info(),
@@ -159,7 +206,6 @@ pub mod staking {
                 },
 
                 &[&_config_seed[..]],
-
             ),
             shcp_lamport_amount_seconds as u64,
         );
@@ -170,7 +216,7 @@ pub mod staking {
         Ok(())
     }
 
-    pub fn global_init(ctx: Context<GlobalInit>) -> Result<()> {
+    pub fn setup_vault(ctx: Context<SetupVault>) -> Result<()> {
         // This instruction is called only once, at the beginning of the program
         // It's purpose is to give authority over the $shCP ATA (the vault) to the program
         
@@ -178,6 +224,7 @@ pub mod staking {
         // It's pubkey can be found using the seed bellow
         let (_config_pda, _bump) = Pubkey::find_program_address(&[PREFIX_CONFIG,
                 ctx.accounts.authority.key.as_ref(),
+                ctx.accounts.vault_ata.key().as_ref(),
             ], ctx.program_id);
         
         // Then we need to declare a Cross Program Invocation (CPI)
@@ -186,7 +233,7 @@ pub mod staking {
 
             anchor_spl::token::SetAuthority {
                 current_authority: ctx.accounts.shapz_master.to_account_info().clone(),
-                account_or_mint: ctx.accounts.shcp_vault_ata.to_account_info().clone(),
+                account_or_mint: ctx.accounts.vault_ata.to_account_info().clone(),
             }
         );
 
@@ -198,33 +245,108 @@ pub mod staking {
         )?;
 
         // Wew can now mark the vault as initialized
-        ctx.accounts.config_account.shcp_vault_is_initialized = 1;
+        ctx.accounts.config_account.vault_is_initialized = 1;
         ctx.accounts.config_account.authority = *ctx.accounts.authority.key;
+
+        Ok(())
+    }
+
+    pub fn cancel_vault(ctx: Context<CancelVault>) -> Result<()> {
+        // This instruction is called before closing the program
+        // or to pause the staking system (since nobody will be able to withdraw)
+        // It'spurpose is to give back authority over a vault ATA to a specific 
+        // wallet
+        
+        // The account that will have authority over the vault is the config account
+        // It's pubkey can be found using the seed bellow
+        // The account that will have authority over the vault is the config account
+        // It's pubkey can be found using the seed bellow
+        let (_config_pda, _bump) = Pubkey::find_program_address(&[
+            PREFIX_CONFIG,
+            ctx.accounts.authority.key.as_ref(),
+            ctx.accounts.vault_ata.to_account_info().key.as_ref(),
+        ], ctx.program_id);
+
+        let _config_seed = &[
+            PREFIX_CONFIG,
+            ctx.accounts.authority.key.as_ref(),
+            ctx.accounts.vault_ata.to_account_info().key.as_ref(),
+            &[_bump]
+        ];
+
+        // We can now transfer the authority to the new owner
+        anchor_spl::token::set_authority(
+
+            CpiContext::new_with_signer(
+                ctx.accounts.token_program.to_account_info(),
+    
+                anchor_spl::token::SetAuthority {
+                    current_authority: ctx.accounts.config_account.to_account_info().clone(),
+                    account_or_mint: ctx.accounts.vault_ata.to_account_info().clone(),
+                },
+    
+                &[&_config_seed[..]],
+            ),
+
+            AuthorityType::AccountOwner,
+            Some(ctx.accounts.new_owner.key()),
+        )?;
+
+        // Wew can now mark the vault as initialized
+        ctx.accounts.config_account.vault_is_initialized = 0;
 
         Ok(())
     }
 }
 
+#[derive(Accounts)]
+pub struct Faucet<'info> {
+    #[account(mut)]
+    pub player: Signer<'info>,
+
+    #[account(mut)]
+    pub player_shcp_ata: Account<'info, TokenAccount>,
+
+    #[account(mut)]
+    pub vault_ata: Account<'info, TokenAccount>,
+
+    /// CHECK:
+    pub authority: AccountInfo<'info>,
+
+    // The config account should the one that have authority over the vault
+    #[account(
+        seeds = [
+            PREFIX_CONFIG,  // PREFIX_SHCP_STACKING
+            authority.key().as_ref(),
+            vault_ata.key().as_ref()
+        ],
+        bump
+    )]
+    pub config_account: Account<'info, ConfigAccount>,
+
+    pub token_program: Program<'info, Token>,
+}
 
 #[derive(Accounts)]
-pub struct GlobalInit<'info> {
+pub struct SetupVault<'info> {
     #[account(mut)]
     pub shapz_master: Signer<'info>,
 
     // The $shCP reward vault that the program will take authority over
     #[account(mut)]
-    pub shcp_vault_ata: Account<'info, TokenAccount>,
+    pub vault_ata: Account<'info, TokenAccount>,
 
     ///CHECK:
     pub authority: AccountInfo<'info>,
 
     #[account(
-        init,
+        init_if_needed,
         payer = shapz_master,
         space = 8 + ConfigAccount::LEN,
         seeds = [
             PREFIX_CONFIG,  // PREFIX_SHCP_STACKING
             authority.key().as_ref(),
+            vault_ata.key().as_ref(),
         ],
         bump
     )]
@@ -234,10 +356,35 @@ pub struct GlobalInit<'info> {
     pub token_program: Program<'info, Token>,
 }
 
+#[derive(Accounts)]
+pub struct CancelVault<'info> {
+    /// CHECK:
+    #[account(mut)]
+    pub new_owner: AccountInfo<'info>,
+
+    // The vault ATA that the program will lose authority for
+    #[account(mut)]
+    pub vault_ata: Account<'info, TokenAccount>,
+
+    ///CHECK:
+    pub authority: AccountInfo<'info>,
+
+    #[account(
+        seeds = [
+            PREFIX_CONFIG,  // PREFIX_SHCP_STACKING
+            authority.key().as_ref(),
+            vault_ata.key().as_ref(),
+        ],
+        bump
+    )]
+    pub config_account: Account<'info, ConfigAccount>,
+
+    pub system_program: Program<'info, System>,
+    pub token_program: Program<'info, Token>,
+}
 
 #[derive(Accounts)]
 pub struct StakeShcp<'info> {
-
     // The player, obviously
     #[account(mut)]
     pub player: Signer<'info>,
@@ -323,6 +470,7 @@ pub struct ClaimSchpReward<'info> {
         seeds = [
             PREFIX_CONFIG,  // PREFIX_SHCP_STACKING
             authority.key().as_ref(),
+            shcp_vault_ata.key().as_ref()
         ],
         bump
     )]
@@ -393,8 +541,7 @@ impl StakingAccount {
 
 #[account]
 pub struct ConfigAccount {
-    pub shcp_vault_is_initialized: u8,
-    pub shfec_vault_is_initialized: u8,
+    pub vault_is_initialized: u8,
     pub authority: Pubkey,
 }
 

@@ -11,7 +11,7 @@ import {
   getMinimumBalanceForRentExemptAccount,
   mintToChecked
 } from "@solana/spl-token";
-import { assert } from "chai";
+// import { assert } from "chai";
 
 
 const PREFIX_STAKING_SHCP = "shcp_staking";
@@ -42,6 +42,7 @@ describe("staking", () => {
 
   let player = Keypair.generate();  // The player (will also be the payer)
   let shapz_master = Keypair.generate();  // The shapz master (payer for setup MintAccount)
+  console.log("shapz_master: ", shapz_master.publicKey);
   // let mint_authority = Keypair.generate();  // The mint authority (own by us)
 
   it("Provide SOL to the player", async () => {
@@ -118,14 +119,6 @@ describe("staking", () => {
   });
 
   it("Initialize the game vault", async () => {
-    console.log('Calculate pda for autority over the vault')
-    const [_shcp_vault_authority, _shcp_vault_authority_bump] = await PublicKey.findProgramAddress(
-      [
-        Buffer.from(anchor.utils.bytes.utf8.encode("shcp_authority")),
-      ],
-      program.programId
-    );
-
     console.log("Initialize the game vault")
     schp_vault_ata_key = await createAssociatedTokenAccount(
       connection,  // connection
@@ -151,15 +144,16 @@ describe("staking", () => {
       [
         Buffer.from(anchor.utils.bytes.utf8.encode(PREFIX_CONFIG)),
         AUTHORITY.toBuffer(),
+        schp_vault_ata_key.toBuffer(),
       ],
       program.programId
     );
 
     console.log("Give the authority over the vault to the program")
-    const tx = await program.rpc.globalInit({
+    const tx = await program.rpc.setupVault({
       accounts: {
         shapzMaster: shapz_master.publicKey,
-        shcpVaultAta: schp_vault_ata_key,
+        vaultAta: schp_vault_ata_key,
         authority: AUTHORITY,
         configAccount: _config_pda,
         systemProgram: SystemProgram.programId,
@@ -170,6 +164,67 @@ describe("staking", () => {
 
     console.log('----------------------------------------')
   })
+
+  it('Use SHFC faucet to give token to the player', async () => {
+    console.log("Calculate PDA for the config account")
+    const [_config_pda, _bump] = await PublicKey.findProgramAddress(
+      [
+        Buffer.from(anchor.utils.bytes.utf8.encode(PREFIX_CONFIG)),
+        AUTHORITY.toBuffer(),
+        schp_vault_ata_key.toBuffer(),
+      ],
+      program.programId
+    );
+
+    console.log("Use faucet to give shCP token to the player")
+    const tx = await program.rpc.faucet(
+      new anchor.BN(10e9),
+      {
+        accounts: {
+          player: player.publicKey,
+          playerShcpAta: shcp_player_ata_key,
+          vaultAta: schp_vault_ata_key,
+          authority: AUTHORITY,
+          configAccount: _config_pda,
+          tokenProgram: TOKEN_PROGRAM_ID,
+        },
+        signers: [player]
+      },
+    );
+    
+
+    console.log('----------------------------------------')
+  })
+
+  // it("Pause the game vault", async () => {
+
+  //   // Create the pubkey for the config account
+  //   console.log("Calculate PDA for the config account")
+  //   const [_config_pda, _bump] = await PublicKey.findProgramAddress(
+  //     [
+  //       Buffer.from(anchor.utils.bytes.utf8.encode(PREFIX_CONFIG)),
+  //       AUTHORITY.toBuffer(),
+  //       schp_vault_ata_key.toBuffer(),
+  //     ],
+  //     program.programId
+  //   );
+  //   console.log("PDA: " + _config_pda.toBase58())
+
+  //   console.log("Give the authority over the vault to the program")
+  //   const tx = await program.rpc.cancelVault({
+  //     accounts: {
+  //       newOwner: shapz_master.publicKey,
+  //       vaultAta: schp_vault_ata_key,
+  //       authority: AUTHORITY,
+  //       configAccount: _config_pda,
+  //       systemProgram: SystemProgram.programId,
+  //       tokenProgram: TOKEN_PROGRAM_ID,
+  //     },
+  //     signers: [],
+  //   });
+
+  //   console.log('----------------------------------------')
+  // })
 
   it("Staking a Compute Shapz", async () => {
     // The NFT vault WILL BE INITIATED by the program
@@ -216,6 +271,7 @@ describe("staking", () => {
       [
         Buffer.from(anchor.utils.bytes.utf8.encode(PREFIX_CONFIG)),
         AUTHORITY.toBuffer(),
+        schp_vault_ata_key.toBuffer(),
       ],
       program.programId
     );
@@ -264,31 +320,31 @@ describe("staking", () => {
     console.log('----------------------------------------')
   });
 
-  it("Unstaking", async () => {
-    console.log("Calculate PDA for the player staking account")
-    const [_player_stacking_account, _psa_bump] = await PublicKey.findProgramAddress(
-      [
-        Buffer.from(anchor.utils.bytes.utf8.encode(PREFIX_STAKING_SHCP)),
-        AUTHORITY.toBuffer(),
-        player.publicKey.toBuffer(),
-        nft_mint_account_key.toBuffer(),
-      ],
-      program.programId
-    );
+  // it("Unstaking", async () => {
+  //   console.log("Calculate PDA for the player staking account")
+  //   const [_player_stacking_account, _psa_bump] = await PublicKey.findProgramAddress(
+  //     [
+  //       Buffer.from(anchor.utils.bytes.utf8.encode(PREFIX_STAKING_SHCP)),
+  //       AUTHORITY.toBuffer(),
+  //       player.publicKey.toBuffer(),
+  //       nft_mint_account_key.toBuffer(),
+  //     ],
+  //     program.programId
+  //   );
 
-    const tx = await program.rpc.unstakeShcp({
-      accounts : {
-        player: player.publicKey,
-        nftAtaAccount: nft_ata_key,
-        nftMint: nft_mint_account_key,
-        authority: AUTHORITY,
-        stackingAccount: _player_stacking_account,
-        tokenProgram: TOKEN_PROGRAM_ID,
-      },
-      signers: []
-    });
+  //   const tx = await program.rpc.unstakeShcp({
+  //     accounts : {
+  //       player: player.publicKey,
+  //       nftAtaAccount: nft_ata_key,
+  //       nftMint: nft_mint_account_key,
+  //       authority: AUTHORITY,
+  //       stackingAccount: _player_stacking_account,
+  //       tokenProgram: TOKEN_PROGRAM_ID,
+  //     },
+  //     signers: []
+  //   });
 
-    console.log('----------------------------------------')
+  //   console.log('----------------------------------------')
   
-  });
+  // });
 });
